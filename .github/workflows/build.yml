@@ -1,10 +1,6 @@
-.github/workflows/build.yml
-name: Build XXTouchNG (TIPA)
-# 初版工作流 —— 基于 XXTouchNG 作者本人(Lessica)在 TrollSpeed 项目用的云编译配方
-# 用法: fork XXTouchNG/XXTouchNG 后, 把本文件放到 .github/workflows/build.yml
-#       Actions 页面手动触发(workflow_dispatch)或 push 触发
-# 产物: Actions 页面底部 Artifacts 下载 XXTouchNG-deb (第一里程碑)
-# 注意: 首次运行大概率报错, 把报错日志发回来迭代修改 (这是预期内的调试过程)
+# Build XXTouchNG (TIPA) - v3
+# Based on the author's own CI recipe (Lessica/TrollSpeed)
+# Milestone 1: make package -> .deb artifact
 on:
   workflow_dispatch:
   push:
@@ -16,7 +12,8 @@ env:
 jobs:
   build:
     name: Build daemons + package
-    runs-on: macos-14
+    # macos-13 = Intel, has Xcode 14.x (macos-14 is ARM and cannot install 14.3.1)
+    runs-on: macos-13
     steps:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1.5.1
@@ -28,7 +25,7 @@ jobs:
           brew install dpkg ldid make libplist openssl@3
           echo "/usr/local/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
-      # ===== theos 环境 (作者维护的 XXTouchNG/theos 分支, 固定 commit 保证可复现) =====
+      # ==== theos env (author-maintained fork, pinned commit) ====
       - name: Checkout XXTouchNG/theos
         uses: actions/checkout@v4
         with:
@@ -66,7 +63,7 @@ jobs:
           path: ${{ env.THEOS }}/sdks
           key: sdks-${{ env.XCODE_VERSION }}
 
-      # ===== 主仓库: XXTouchNG 源码 (含 LFS 与子模块) =====
+      # ==== main repo (LFS + submodules) ====
       - name: Checkout XXTouchNG
         uses: actions/checkout@v4
         with:
@@ -75,7 +72,7 @@ jobs:
           lfs: true
 
       - name: Build daemons + package (deb)
-        # TrollStore 不校验签名 => 用 ad-hoc("-") 代替作者的 Developer ID 证书
+        # TrollStore does not verify signatures => ad-hoc sign ("-") instead of dev cert
         run: |
           cd XXTouchNG
           make package FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
@@ -86,14 +83,3 @@ jobs:
         with:
           name: XXTouchNG-deb
           path: XXTouchNG/packages/*.deb
-
-  # ===== 里程碑2: 组装 TIPA (首个里程碑跑通后再启用/迭代) =====
-  # 思路: explorer 目标用 xcodebuild 出 XXTExplorer.app (macOS runner 自带 Xcode, 无需真 Mac),
-  #       与 deb 里 layout 的守护进程合并成 Payload/ 打包成 .tipa, ldid 伪签名
-  #启用前先把上面 job 跑通, 再按报错逐步放开本段
-  # tipa:
-  #   needs: build
-  #   runs-on: macos-14
-  #   steps:
-  #     - name: Build explorer app + assemble TIPA
-  #       run: echo "按首个里程碑的实际产物再细化"
