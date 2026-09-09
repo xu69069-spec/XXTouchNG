@@ -75,10 +75,13 @@ jobs:
         # TrollStore does not verify signatures => ad-hoc sign ("-") instead of dev cert
         # GO_EASY_ON_ME=1 disables theos' -Werror: Xcode 16 clang emits many new
         # warnings (e.g. -Wunused-but-set-variable) that would kill the 2022-era code
+        # _THEOS_DARWIN_CAN_USE_MODULES= (empty) turns off clang -fmodules: Xcode 16
+        # maps errno.h etc. to C++ modules, and zmq.h includes it inside extern "C"
+        # -> "import of C++ module 'std_errno_h' appears within extern C"
         run: |
           cd XXTouchNG
-          make package GO_EASY_ON_ME=1 FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
-            || make package GO_EASY_ON_ME=1 FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
+          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
+            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
