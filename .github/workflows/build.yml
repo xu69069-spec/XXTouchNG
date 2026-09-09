@@ -1,6 +1,11 @@
-# Build XXTouchNG (TIPA) - v16
+# Build XXTouchNG (TIPA) - v17
 # Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
+#
+# v17 change: mk_stub now mkdir -p's the parent directory before writing.
+#    Some leaked -l args are path-style ("lib/liblibapplibst"), so the stub
+#    filename contains a slash and the plain redirect failed with
+#    "No such file or directory", burning all retries.
 #
 # v16 change: auto-stub loop. On "ld: library 'X' not found" the build step
 #    generates an empty tbd stub (lib + X + .tbd) and retries, ending the
@@ -97,6 +102,11 @@ jobs:
           set -o pipefail
           mkdir -p ${THEOS}/stublibs
           mk_stub() {
+            # $1 is the verbatim -l argument; ld searches for "lib" + arg + ext,
+            # so the stub filename mirrors that (may contain slashes for
+            # path-style args like "lib/liblibapplibst" - create parents first)
+            local f="${THEOS}/stublibs/lib$1.tbd"
+            mkdir -p "$(dirname "$f")"
             printf '%s\n' \
               '--- !tapi-tbd-v3' \
               'archs:           [ arm64, arm64e ]' \
@@ -108,7 +118,7 @@ jobs:
               '  - archs:           [ arm64, arm64e ]' \
               '    symbols:         [ ]' \
               '...' \
-              > "${THEOS}/stublibs/lib$1.tbd"
+              > "$f"
           }
           # known offenders up front so the first pass usually succeeds
           for n in z zpkt libz libzpkt liblibzpkt pthread ffi curl nghttp2 uv ev crypto ssl zip archive iconv; do
