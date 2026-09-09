@@ -1,6 +1,14 @@
-# Build XXTouchNG (TIPA) - v18
+# Build XXTouchNG (TIPA) - v19
 # Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
+#
+# v19 change: patch the pinned theos instance/rules.mk to drop the hardcoded
+#    "-pch-output-dir" flag from the swiftc invocation. libtfcookiesmanager
+#    contains Swift sources; with Xcode 16.2's Swift 6 compiler the
+#    generate-pch step ("error: generate-pch command failed with exit code 1")
+#    fails against the stub 14.5 SDK. The bridging-header PCH is only a
+#    compile-time cache - without the flag swiftc skips generating it and the
+#    actual Swift compilation proceeds (and surfaces any real error verbatim).
 #
 # v18 change: libtfcontainermanager_WEAK_LIBRARIES= (empty). app/Makefile:30
 #    declares the weak library as a PATH ("lib/libapplist"); old ld silently
@@ -69,6 +77,13 @@ jobs:
           # README "IMPORTANT": export THEOS_OBJ_DIR so recipes (liblua/tbdump.sh)
           # see it; without this $THEOS_OBJ_DIR is empty -> "Failed to open ./liblua.dylib"
           echo "export THEOS_OBJ_DIR" >> $GITHUB_WORKSPACE/theos/makefiles/common.mk
+          # Swift (libtfcookiesmanager): drop the hardcoded -pch-output-dir from
+          # the swiftc rule - Xcode 16 Swift 6 generate-pch fails on the stub SDK
+          # ("error: generate-pch command failed with exit code 1"); PCH is only
+          # a cache, skipping it is harmless and unmasks any real swift error
+          sed -i '' 's# -pch-output-dir $(THEOS_OBJ_DIR)/$(THEOS_CURRENT_INSTANCE)-pch##' \
+            $GITHUB_WORKSPACE/theos/makefiles/instance/rules.mk
+          grep -c "pch-output-dir" $GITHUB_WORKSPACE/theos/makefiles/instance/rules.mk || true
           echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
           # Xcode 16+ no longer falls back to toolchain libc++ headers when the
           # sysroot lacks them, and theos/sdks SDKs carry no C++ headers at all
