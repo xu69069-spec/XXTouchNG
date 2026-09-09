@@ -91,10 +91,14 @@ jobs:
         # includes <sys/proc.h> bare; without clang modules the BSD types
         # (u_int/u_char/user_addr_t/struct timeval64) are no longer auto-resolved
         # -> "unknown type name 'u_int'" errors. Pre-include sys/types.h globally.
+        # libtfcontainermanager_LDFLAGS: somewhere -lzmq ends up on this link, but
+        # libzmq.dylib (built by ext/ earlier in the aggregate) lives in the shared
+        # project obj dir which is not on the default -L search path
+        # -> "ld: library 'libzmq' not found". Add it (plus keep LUA_MOD_LDFLAGS).
         run: |
           cd XXTouchNG
-          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache" FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
-            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache" FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
+          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache" 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)' FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
+            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache" 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)' FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
