@@ -1,6 +1,14 @@
-# Build XXTouchNG (TIPA) - v17
+# Build XXTouchNG (TIPA) - v18
 # Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
+#
+# v18 change: libtfcontainermanager_WEAK_LIBRARIES= (empty). app/Makefile:30
+#    declares the weak library as a PATH ("lib/libapplist"); old ld silently
+#    ignored missing weak libraries, Xcode 16's ld errors out, and for
+#    slash-style -l args it does not consult -L search paths at all, so tbd
+#    stubs can never satisfy it. Clearing the var is semantically equivalent:
+#    weak = optional at runtime, and all dylibs already link with
+#    -undefined dynamic_lookup so symbols resolve at runtime anyway.
 #
 # v17 change: mk_stub now mkdir -p's the parent directory before writing.
 #    Some leaked -l args are path-style ("lib/liblibapplibst"), so the stub
@@ -127,6 +135,7 @@ jobs:
           cd XXTouchNG
           ARGS=(GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES=
                 libdebugwindow_FRAMEWORKS=UIKit
+                libtfcontainermanager_WEAK_LIBRARIES=
                 ADDITIONAL_CFLAGS="-include sys/types.h"
                 ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache -L${THEOS}/stublibs"
                 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)'
