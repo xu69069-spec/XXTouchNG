@@ -1,13 +1,17 @@
-# Build XXTouchNG (TIPA) - v20
+# Build XXTouchNG (TIPA) - v21
 # Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
 #
-# v20 change: bypass theos' parse-swiftc-output filter for the swiftc rule.
-#    v19 showed the driver still generates the bridging PCH without
-#    -pch-output-dir, and theos' filter swallows the underlying clang error
-#    ("error: generate-pch command failed with exit code 1" is all we see).
-#    Raw swiftc output now goes straight to the build log so the real error
-#    is visible.
+# v20 change: bypass theos' parse-swiftc-output filter -> revealed the real
+#    error: "invalid argument '-std=c++14' not allowed with 'Objective-C'"
+#
+# v21 change: libtfcookiesmanager_CCFLAGS= (empty). theos forwards every
+#    C/CC/ObjC flag to swiftc as -Xcc (rules.mk:179); cookies/Makefile sets
+#    CCFLAGS=-std=c++14, and Swift 6's clang importer refuses any -std=c++*
+#    when compiling the (Objective-C) bridging-header PCH -> "clang importer
+#    creation failed". Clearing CCFLAGS only drops -std=c++14; the instance's
+#    three ObjC++ files fall back to clang's default gnu++17 (fine for
+#    2022-era bridge code).
 #
 # v18 change: libtfcontainermanager_WEAK_LIBRARIES= (empty). app/Makefile:30
 #    declares the weak library as a PATH ("lib/libapplist"); old ld silently
@@ -151,6 +155,7 @@ jobs:
           ARGS=(GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES=
                 libdebugwindow_FRAMEWORKS=UIKit
                 libtfcontainermanager_WEAK_LIBRARIES=
+                libtfcookiesmanager_CCFLAGS=
                 ADDITIONAL_CFLAGS="-include sys/types.h"
                 ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache -L${THEOS}/stublibs"
                 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)'
