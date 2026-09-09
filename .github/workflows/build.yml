@@ -49,6 +49,9 @@ jobs:
           git clone --depth 1 https://github.com/theos/sdks.git $GITHUB_WORKSPACE/theos/sdks
           # XXTouchNG ships its own OpenSSL headers - avoid header clash
           rm -rf $GITHUB_WORKSPACE/theos/vendor/include/openssl
+          # README "IMPORTANT": export THEOS_OBJ_DIR so recipes (liblua/tbdump.sh)
+          # see it; without this $THEOS_OBJ_DIR is empty -> "Failed to open ./liblua.dylib"
+          echo "export THEOS_OBJ_DIR" >> $GITHUB_WORKSPACE/theos/makefiles/common.mk
           echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
 
       # ==== main repo (LFS + submodules) ====
