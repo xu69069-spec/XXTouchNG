@@ -1,11 +1,10 @@
-# Build XXTouchNG (TIPA) - v15
+# Build XXTouchNG (TIPA) - v16
 # Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
 #
-# v15 change: added "Create stub libraries" step. The aggregate build leaks -l
-#    flags (z / zpkt / vendored libs) from earlier subprojects' .ldflags into
-#    later links; empty tbd stubs + -L${THEOS}/stublibs satisfy the linker
-#    (symbols still resolve at runtime via -undefined dynamic_lookup).
+# v16 change: auto-stub loop. On "ld: library 'X' not found" the build step
+#    generates an empty tbd stub (lib + X + .tbd) and retries, ending the
+#    whack-a-mole of leaked -l flags from aggregated subproject .ldflags.
 #
 # v5 changes:
 #  - Dropped the "patched SDK" step entirely: theos/sdks master no longer ships
@@ -76,61 +75,73 @@ jobs:
           submodules: recursive
           lfs: true
 
-      # ==== stub libraries ====
-      # The aggregate build leaks -l flags (z / zpkt / curl / crypto / ffi / uv ...)
-      # from earlier subprojects' .ldflags files into every later link
-      # ("ld: library 'libz' not found", "ld: library 'liblibzpkt' not found").
-      # All dylibs link with -undefined dynamic_lookup, so no link-time symbols are
-      # actually needed - only the library FILES must exist. Empty arm64+arm64e
-      # tbd stubs satisfy the linker; at runtime the real libs are used.
-      # Both name spellings are covered (arg "zpkt" -> libzpkt, arg "libzpkt" -> liblibzpkt).
-      - name: Create stub libraries
+      # ==== build with auto-stubbing of missing libraries ====
+      # The aggregate build leaks -l flags from earlier subprojects' .ldflags
+      # files into every later link; some point at libraries that exist nowhere
+      # ("ld: library 'liblibzpkt' not found" - the quoted name is the -l
+      # argument verbatim, ld searches for "lib" + name + ".dylib/.tbd").
+      # Every dylib links with -undefined dynamic_lookup, so no link-time
+      # symbols are actually needed - only the library FILES must exist.
+      # Strategy: on "library 'X' not found", generate an empty arm64+arm64e
+      # tbd stub ${THEOS}/stublibs/libX.tbd and retry (make is incremental,
+      # retries are fast). At runtime the real libs are used.
+      - name: Build daemons + package (deb)
+        # GO_EASY_ON_ME=1: theos' -Werror kills 2022-era code under Xcode 16 clang
+        # _THEOS_DARWIN_CAN_USE_MODULES= (empty): kill -fmodules (extern "C" import errors)
+        # libdebugwindow_FRAMEWORKS=UIKit: no framework autolinking with modules off
+        # ADDITIONAL_CFLAGS=-include sys/types.h: BSD types for kern_memorystatus.h
+        # ADDITIONAL_LDFLAGS=-Wl,-undefined,dynamic_lookup: hook libs resolve at
+        #   runtime; + -Wl,-not_for_dyld_shared_cache: new ld requires opting out
+        # libtfcontainermanager_LDFLAGS: -L$(THEOS_OBJ_DIR) to find built libzmq
         run: |
+          set -o pipefail
           mkdir -p ${THEOS}/stublibs
-          for n in z zpkt libz libzpkt pthread ffi curl nghttp2 uv ev crypto ssl zip archive iconv; do
+          mk_stub() {
             printf '%s\n' \
               '--- !tapi-tbd-v3' \
               'archs:           [ arm64, arm64e ]' \
               'platform:        ios' \
-              "install-name:    /usr/lib/lib${n}.dylib" \
+              "install-name:    /usr/lib/lib$1.dylib" \
               'current-version: 0' \
               'compatibility-version: 0' \
               'exports:' \
               '  - archs:           [ arm64, arm64e ]' \
               '    symbols:         [ ]' \
               '...' \
-              > "${THEOS}/stublibs/lib${n}.tbd"
+              > "${THEOS}/stublibs/lib$1.tbd"
+          }
+          # known offenders up front so the first pass usually succeeds
+          for n in z zpkt libz libzpkt liblibzpkt pthread ffi curl nghttp2 uv ev crypto ssl zip archive iconv; do
+            mk_stub "$n"
           done
-          ls ${THEOS}/stublibs
-
-      - name: Build daemons + package (deb)
-        # TrollStore does not verify signatures => ad-hoc sign ("-") instead of dev cert
-        # GO_EASY_ON_ME=1 disables theos' -Werror: Xcode 16 clang emits many new
-        # warnings (e.g. -Wunused-but-set-variable) that would kill the 2022-era code
-        # _THEOS_DARWIN_CAN_USE_MODULES= (empty) turns off clang -fmodules: Xcode 16
-        # maps errno.h etc. to C++ modules, and zmq.h includes it inside extern "C"
-        # -> "import of C++ module 'std_errno_h' appears within extern C"
-        # libdebugwindow_FRAMEWORKS=UIKit: with modules off there is no framework
-        # autolinking, and debug/Makefile never declares UIKit explicitly
-        # ADDITIONAL_LDFLAGS=-Wl,-undefined,dynamic_lookup: same root cause for all
-        # libs (CoreGraphics/Foundation symbols like _CGRectZero not linked because
-        # the frameworks were only autolinked before) - let every dylib resolve
-        # remaining symbols at runtime (they exist in the jailbreak environment)
-        # + -Wl,-not_for_dyld_shared_cache: new ld refuses dynamic_lookup for
-        # shared-cache-eligible dylibs ("ld: Shared cache dylibs eligible cannot
-        # use '-undefined dynamic_lookup'"), so opt the dylibs out of the cache
-        # ADDITIONAL_CFLAGS=-include sys/types.h: shared/include/kern_memorystatus.h
-        # includes <sys/proc.h> bare; without clang modules the BSD types
-        # (u_int/u_char/user_addr_t/struct timeval64) are no longer auto-resolved
-        # -> "unknown type name 'u_int'" errors. Pre-include sys/types.h globally.
-        # libtfcontainermanager_LDFLAGS: somewhere -lzmq ends up on this link, but
-        # libzmq.dylib (built by ext/ earlier in the aggregate) lives in the shared
-        # project obj dir which is not on the default -L search path
-        # -> "ld: library 'libzmq' not found". Add it (plus keep LUA_MOD_LDFLAGS).
-        run: |
           cd XXTouchNG
-          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache -L${THEOS}/stublibs" 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)' FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
-            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_CFLAGS="-include sys/types.h" ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache -L${THEOS}/stublibs" 'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)' FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
+          ARGS=(GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES=
+                libdebugwindow_FRAMEWORKS=UIKit
+                ADDITIONAL_CFLAGS="-include sys/types.h"
+                ADDITIONAL_LDFLAGS="-Wl,-undefined,dynamic_lookup -Wl,-not_for_dyld_shared_cache -L${THEOS}/stublibs"
+                'libtfcontainermanager_LDFLAGS=-L$(THEOS_OBJ_DIR) $(LUA_MOD_LDFLAGS)'
+                FINALPACKAGE=1 TARGET_CODESIGN_CERT=-)
+          build() {
+            local a m MISSING
+            for a in 1 2 3 4 5 6; do
+              if make package "${ARGS[@]}" "$@" 2>&1 | tee /tmp/build.log; then
+                return 0
+              fi
+              MISSING=$(grep -o "library '[^']*' not found" /tmp/build.log | sed -E "s/library '([^']*)' not found/\1/" | sort -u)
+              if [ -z "$MISSING" ]; then
+                return 1
+              fi
+              echo "::notice::Auto-stubbing missing libraries: $MISSING"
+              for m in $MISSING; do
+                mk_stub "$m"
+              done
+            done
+            return 1
+          }
+          if ! build; then
+            echo "::notice::Falling back to arm64-only build"
+            build FINALPACKAGE_ARCHS=arm64
+          fi
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
