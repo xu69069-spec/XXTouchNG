@@ -57,7 +57,7 @@ jobs:
           # sysroot lacks them, and theos/sdks SDKs carry no C++ headers at all
           # -> "fatal error: 'string' file not found" when compiling .cpp/.mm.
           # Symlink Xcode's iOS SDK c++ headers into every theos iOS SDK.
-          XCODE_SDK=$$(xcrun -sdk iphoneos --show-sdk-path)
+          XCODE_SDK=$(xcrun -sdk iphoneos --show-sdk-path)
           for sdk in $GITHUB_WORKSPACE/theos/sdks/iPhoneOS*.sdk; do
             ln -sfn "$XCODE_SDK/usr/include/c++" "$sdk/usr/include/c++"
           done
