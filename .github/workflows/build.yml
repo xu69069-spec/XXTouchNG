@@ -1,19 +1,25 @@
-# Build XXTouchNG (TIPA) - v3
+# Build XXTouchNG (TIPA) - v4
 # Based on the author's own CI recipe (Lessica/TrollSpeed)
 # Milestone 1: make package -> .deb artifact
+#
+# v4 changes:
+#  - macos-13 image has been RETIRED by GitHub (jobs queue forever), now macos-15 (arm64)
+#  - Xcode 14.3.1 no longer exists on any hosted image, now Xcode 16.2 (available on macos-15)
+#  - Homebrew prefix is /opt/homebrew on arm64 (was /usr/local on Intel)
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
 env:
-  XCODE_VERSION: "14.3.1"
+  XCODE_VERSION: "16.2"
 
 jobs:
   build:
     name: Build daemons + package
-    # macos-13 = Intel, has Xcode 14.x (macos-14 is ARM and cannot install 14.3.1)
-    runs-on: macos-13
+    # macos-15 = arm64 standard (free for public repos). macos-14 is deprecated (2026-11),
+    # macos-26 is too new. "macos-15-large" (Intel) is a paid larger runner — avoid.
+    runs-on: macos-15
     steps:
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1.5.1
@@ -23,7 +29,7 @@ jobs:
       - name: Install build dependencies
         run: |
           brew install dpkg ldid make libplist openssl@3
-          echo "/usr/local/opt/make/libexec/gnubin" >> $GITHUB_PATH
+          echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
       # ==== theos env (author-maintained fork, pinned commit) ====
       - name: Checkout XXTouchNG/theos
