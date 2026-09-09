@@ -80,11 +80,14 @@ jobs:
         # -> "import of C++ module 'std_errno_h' appears within extern C"
         # libdebugwindow_FRAMEWORKS=UIKit: with modules off there is no framework
         # autolinking, and debug/Makefile never declares UIKit explicitly
-        # -> "Undefined symbols: OBJC_METACLASS_$_UIAutoRotatingWindow, UIFontWeight*..."
+        # ADDITIONAL_LDFLAGS=-Wl,-undefined,dynamic_lookup: same root cause for all
+        # libs (CoreGraphics/Foundation symbols like _CGRectZero not linked because
+        # the frameworks were only autolinked before) - let every dylib resolve
+        # remaining symbols at runtime (they exist in the jailbreak environment)
         run: |
           cd XXTouchNG
-          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
-            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
+          make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_LDFLAGS=-Wl,-undefined,dynamic_lookup FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" \
+            || make package GO_EASY_ON_ME=1 _THEOS_DARWIN_CAN_USE_MODULES= libdebugwindow_FRAMEWORKS=UIKit ADDITIONAL_LDFLAGS=-Wl,-undefined,dynamic_lookup FINALPACKAGE=1 TARGET_CODESIGN_CERT="-" FINALPACKAGE_ARCHS=arm64
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
