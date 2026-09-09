@@ -1,11 +1,16 @@
-# Build XXTouchNG (TIPA) - v4
-# Based on the author's own CI recipe (Lessica/TrollSpeed)
+# Build XXTouchNG (TIPA) - v5
+# Based on the author's own CI recipe (Lessica/TrollSpeed, build-release.yml)
 # Milestone 1: make package -> .deb artifact
 #
-# v4 changes:
-#  - macos-13 image has been RETIRED by GitHub (jobs queue forever), now macos-15 (arm64)
-#  - Xcode 14.3.1 no longer exists on any hosted image, now Xcode 16.2 (available on macos-15)
-#  - Homebrew prefix is /opt/homebrew on arm64 (was /usr/local on Intel)
+# v5 changes:
+#  - Dropped the "patched SDK" step entirely: theos/sdks master no longer ships
+#    create_patched_sdk.py (removed in theos/sdks@0222fd54), which is why the
+#    job died with "python3: can't open file ... exit code 2".
+#    XXTouchNG's Makefile pins TARGET iphone:clang:14.5, so it uses the
+#    prebuilt iPhoneOS14.5.sdk straight from theos/sdks - no patching needed.
+#    (TrollSpeed's own CI does exactly this: plain theos/sdks + brew deps.)
+#  - Removed tbd build + SDK cache steps (no longer needed).
+#  - Added: remove theos vendor openssl (README says XXTouchNG ships its own).
 on:
   workflow_dispatch:
   push:
@@ -17,8 +22,6 @@ env:
 jobs:
   build:
     name: Build daemons + package
-    # macos-15 = arm64 standard (free for public repos). macos-14 is deprecated (2026-11),
-    # macos-26 is too new. "macos-15-large" (Intel) is a paid larger runner — avoid.
     runs-on: macos-15
     steps:
       - name: Setup Xcode
@@ -28,7 +31,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew install dpkg ldid make libplist openssl@3
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install dpkg make libplist openssl@3 ldid-procursus
           echo "$(brew --prefix)/opt/make/libexec/gnubin" >> $GITHUB_PATH
 
       # ==== theos env (author-maintained fork, pinned commit) ====
@@ -40,34 +43,13 @@ jobs:
           path: theos
           submodules: recursive
 
-      - name: Set THEOS env
+      - name: Set THEOS env + prepare SDKs
         run: |
           rm -rf $GITHUB_WORKSPACE/theos/sdks
+          git clone --depth 1 https://github.com/theos/sdks.git $GITHUB_WORKSPACE/theos/sdks
+          # XXTouchNG ships its own OpenSSL headers - avoid header clash
+          rm -rf $GITHUB_WORKSPACE/theos/vendor/include/openssl
           echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
-
-      - name: Restore SDK cache
-        id: sdks-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.THEOS }}/sdks
-          key: sdks-${{ env.XCODE_VERSION }}
-
-      - if: steps.sdks-restore.outputs.cache-hit != 'true'
-        name: Prepare SDKs (theos/sdks + tbd + patched sdk)
-        run: |
-          git clone --depth 1 https://github.com/theos/sdks.git ${{ env.THEOS }}/sdks
-          git clone https://github.com/XXTouchNG/tbd.git tbd
-          cd tbd && make && cp bin/tbd /usr/local/bin/tbd
-          cd ${{ env.THEOS }}/sdks
-          python3 create_patched_sdk.py --no-overwrite \
-            -x $(dirname $(dirname $(xcode-select -p)))
-
-      - name: Save SDK cache
-        if: steps.sdks-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.THEOS }}/sdks
-          key: sdks-${{ env.XCODE_VERSION }}
 
       # ==== main repo (LFS + submodules) ====
       - name: Checkout XXTouchNG
